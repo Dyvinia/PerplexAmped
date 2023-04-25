@@ -1,4 +1,8 @@
 {
+    "options": {
+        "thumbnailSize": 128,
+        "refreshRate": 1.0
+    },
     "logging": {
         "severity": "INFO"
     },

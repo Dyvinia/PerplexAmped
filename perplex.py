@@ -62,9 +62,12 @@ class PerplexAmped:
             if session is None:
                 prevSession = None
                 prevState = ""
+            else:
+                prevSession = session
+                prevState = session.player.state
 
             # wait before refresh
-            sleep(self.config["plex"]["refreshRate"])
+            sleep(self.config["options"]["refreshRate"])
 
     def LoadConfig(self: Self) -> Dict[str, Any]:
         """Load the configuration values specified in config.json"""
@@ -232,10 +235,12 @@ class PerplexAmped:
 
         result: Dict[str, Any] = {}   
 
+        imgSize = self.config["options"]["thumbnailSize"]
+
         baseUrl = active.thumbUrl.split('/')[2]
         quoteUrl = urllib.parse.quote(active.parentThumb)
         plexToken = "&" + active.thumbUrl.split('?')[-1]
-        url = "https://" + baseUrl + "/photo/:/transcode?width=128&height=128&minSize=1&upscale=1&url=" + quoteUrl + plexToken
+        thumbUrl = f"https://{baseUrl}/photo/:/transcode?width={imgSize}&height={imgSize}&minSize=1&upscale=1&url={quoteUrl}{plexToken}"
 
         parentThumb = active.parentThumb.replace('/', '\\')
 
@@ -249,7 +254,7 @@ class PerplexAmped:
 
         if currentThumbPath != parentThumb:
             if not os.path.isfile(thumbFile):
-                response = httpx.get(url)
+                response = httpx.get(thumbUrl)
                 open(thumbFile, 'wb').write(response.content)
             
             if not os.path.isfile(linkFile):
@@ -263,10 +268,10 @@ class PerplexAmped:
         currentThumbPath = parentThumb
         currentKey = active.key
 
-        result["primary"] = active.titleSort
-        result["secondary"] = f"by {active.originalTitle if active.originalTitle != None else active.artist().title}"
-        result["remaining"] = int(active.viewOffset / 1000)
-        result["imageText"] = active.parentTitle
+        result["title"] = active.title
+        result["artist"] = f"by {active.originalTitle if active.originalTitle != None else active.artist().title}"
+        result["time"] = int(active.viewOffset / 1000)
+        result["album"] = active.parentTitle
         result["image"] = currentThumbURL
         result["state"] = active.player.state
 
@@ -277,17 +282,17 @@ class PerplexAmped:
     def SetPresence(self: Self, client: Presence, data: Dict[str, Any]) -> bool:
         """Set the Rich Presence status for the provided Discord client."""
 
-        title: str = data["primary"]
+        title: str = data["title"]
         stateCaps = data["state"].capitalize()
 
         try:
             if data["state"] == "playing":
                 client.update(
                     details=title,
-                    state=data.get("secondary"),
-                    start=int(datetime.now().timestamp() - data["remaining"]),
+                    state=data["artist"],
+                    start=int(datetime.now().timestamp() - data["time"]),
                     large_image=data["image"],
-                    large_text=data["imageText"],
+                    large_text=data["album"],
                     small_image="playing",
                     small_text=stateCaps,
                 )
@@ -295,9 +300,9 @@ class PerplexAmped:
             else:
                 client.update(
                     details=title,
-                    state=data.get("secondary"),
+                    state=data["artist"],
                     large_image=data["image"],
-                    large_text=data["imageText"],
+                    large_text=data["album"],
                     small_image="paused",
                     small_text=stateCaps,
                 )
@@ -321,6 +326,7 @@ if __name__ == "__main__":
 
     global server
     server: Optional[PlexServer] = None
+
     try:
         PerplexAmped.Initialize(PerplexAmped)
     except KeyboardInterrupt:
