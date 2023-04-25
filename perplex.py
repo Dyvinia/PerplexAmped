@@ -59,8 +59,9 @@ class PerplexAmped:
                     pass
                 sleep(15.0)
 
-            prevSession = session
-            prevState = session.player.state
+            if session is None:
+                prevSession = None
+                prevState = ""
 
             # wait before refresh
             sleep(self.config["plex"]["refreshRate"])
