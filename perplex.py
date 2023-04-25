@@ -69,8 +69,7 @@ class PerplexAmped:
         """Load the configuration values specified in config.json"""
 
         try:
-            #with open("config.json", "r") as file:
-            with open("C:\\Users\\Dulana\\Downloads\\Perplex-main\\Perplex-main\\config.json", "r") as file:
+            with open("config.json", "r") as file:
                 config: Dict[str, Any] = json.loads(file.read())
         except Exception as e:
             logger.critical(f"Failed to load configuration, {e}")
