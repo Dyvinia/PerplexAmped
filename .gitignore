@@ -137,3 +137,6 @@ auth.txt
 
 # Thumbnail Cache
 cache/
+
+# Other
+run.bat
