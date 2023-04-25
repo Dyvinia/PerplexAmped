@@ -246,7 +246,6 @@ class PerplexAmped:
 
         global currentThumbPath
         global currentThumbURL
-        global currentKey
 
         thumbFile = os.path.dirname(os.path.realpath(__file__)) + "\\cache" + parentThumb + ".png"
         linkFile = os.path.dirname(os.path.realpath(__file__)) + "\\cache" + parentThumb + ".txt"
@@ -266,7 +265,6 @@ class PerplexAmped:
             
         
         currentThumbPath = parentThumb
-        currentKey = active.key
 
         result["title"] = active.title
         result["artist"] = f"by {active.originalTitle if active.originalTitle != None else active.artist().title}"
