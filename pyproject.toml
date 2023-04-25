@@ -11,6 +11,7 @@ loguru = "^0.6.0"
 PlexAPI = "^4.13.2"
 httpx = "^0.23.3"
 pypresence = "^4.2.1"
+pyimgur = "^0.6.0"
 
 [tool.poetry.dev-dependencies]
 pylint = "^2.16.1"
