@@ -1,78 +1,76 @@
 import json
 import urllib.parse
+import pyimgur
+import os
 from datetime import datetime
 from pathlib import Path
 from sys import exit, stderr
 from time import sleep
-from typing import Any, Dict, List, Optional, Self, Union
+from typing import Any, Dict, List, Optional, Self
 
 import httpx
-from httpx import Response
 from loguru import logger
 from plexapi.audio import TrackSession
 from plexapi.media import Media
 from plexapi.myplex import MyPlexAccount, MyPlexResource, PlexServer
-from plexapi.video import EpisodeSession, MovieSession
 from pypresence import Presence
 
-
-class Perplex:
+class PerplexAmped:
     """
-    Discord Rich Presence implementation for Plex.
+    Discord Rich Presence implementation for Plex music.
 
-    https://github.com/EthanC/Perplex
+    https://github.com/Dyvinia/PerplexAmped
+    Forked from https://github.com/EthanC/Perplex 
     """
 
     def Initialize(self: Self) -> None:
-        """Initialize Perplex and begin primary functionality."""
+        """Initialize PerplexAmped and begin primary functionality."""
 
-        logger.info("Perplex")
-        logger.info("https://github.com/EthanC/Perplex")
+        logger.info("PerplexAmped")
+        logger.info("https://github.com/Dyvinia/PerplexAmped")
 
-        self.config: Dict[str, Any] = Perplex.LoadConfig(self)
+        self.config: Dict[str, Any] = PerplexAmped.LoadConfig(self)
 
-        Perplex.SetupLogging(self)
+        PerplexAmped.SetupLogging(self)
 
-        plex: MyPlexAccount = Perplex.LoginPlex(self)
-        discord: Presence = Perplex.LoginDiscord(self)
+        plex: MyPlexAccount = PerplexAmped.LoginPlex(self)
+        discord: Presence = PerplexAmped.LoginDiscord(self)
+
+        prevSession: Optional[TrackSession] = None
+        prevState = ""
 
         while True:
-            session: Optional[
-                Union[MovieSession, EpisodeSession, TrackSession]
-            ] = Perplex.FetchSession(self, plex)
+            session: Optional[TrackSession] = PerplexAmped.FetchSession(self, plex)
 
             if session:
-                logger.success(f"Fetched active media session")
+                if session != prevSession or session.player.state != prevState:
+                    if type(session) is TrackSession:
+                        status: Dict[str, Any] = PerplexAmped.BuildTrackPresence(self, session)
 
-                if type(session) is MovieSession:
-                    status: Dict[str, Any] = Perplex.BuildMoviePresence(self, session)
-                elif type(session) is EpisodeSession:
-                    status: Dict[str, Any] = Perplex.BuildEpisodePresence(self, session)
-                elif type(session) is TrackSession:
-                    status: Dict[str, Any] = Perplex.BuildTrackPresence(self, session)
+                    success: bool = PerplexAmped.SetPresence(self, discord, status)
 
-                success: bool = Perplex.SetPresence(self, discord, status)
-
-                # Reestablish a failed Discord Rich Presence connection
-                if not success:
-                    discord = Perplex.LoginDiscord(self)
+                    # Reestablish a failed Discord Rich Presence connection
+                    if not success:
+                        discord = PerplexAmped.LoginDiscord(self)
             else:
                 try:
                     discord.clear()
                 except Exception:
                     pass
+                sleep(15.0)
 
-            # Presence updates have a rate limit of 1 update per 15 seconds
-            # https://discord.com/developers/docs/rich-presence/how-to#updating-presence
-            logger.info("Sleeping for 15s...")
+            prevSession = session
+            prevState = session.player.state
 
-            sleep(15.0)
+            # wait before refresh
+            sleep(self.config["plex"]["refreshRate"])
 
     def LoadConfig(self: Self) -> Dict[str, Any]:
         """Load the configuration values specified in config.json"""
 
         try:
-            with open("config.json", "r") as file:
+            #with open("config.json", "r") as file:
+            with open("C:\\Users\\Dulana\\Downloads\\Perplex-main\\Perplex-main\\config.json", "r") as file:
                 config: Dict[str, Any] = json.loads(file.read())
         except Exception as e:
             logger.critical(f"Failed to load configuration, {e}")
@@ -170,7 +168,7 @@ class Perplex:
 
     def FetchSession(
         self: Self, client: MyPlexAccount
-    ) -> Optional[Union[MovieSession, EpisodeSession, TrackSession]]:
+    ) -> Optional[TrackSession]:
         """
         Connect to the configured Plex Media Server and return the active
         media session.
@@ -179,7 +177,6 @@ class Perplex:
         settings: Dict[str, Any] = self.config["plex"]
 
         resource: Optional[MyPlexResource] = None
-        server: Optional[PlexServer] = None
 
         for entry in settings["servers"]:
             for result in client.resources():
@@ -197,7 +194,11 @@ class Perplex:
             exit(1)
 
         try:
-            server = resource.connect()
+            global server
+            if server is None:
+                logger.info(f"Connecting to {resource.name}...")
+                server = resource.connect()
+                logger.success(f"Connected to {resource.name}")
         except Exception as e:
             logger.critical(
                 f"Failed to connect to configured Plex Media Server ({resource.name}), {e}"
@@ -206,14 +207,14 @@ class Perplex:
             exit(1)
 
         sessions: List[Media] = server.sessions()
-        active: Optional[Union[MovieSession, EpisodeSession, TrackSession]] = None
+        active: Optional[TrackSession] = None
 
         if len(sessions) > 0:
             i: int = 0
 
             for entry in settings["users"]:
                 for result in sessions:
-                    if entry.lower() in [alias.lower() for alias in result.usernames]:
+                    if type(result) is TrackSession and entry.lower() in [alias.lower() for alias in result.usernames]:
                         active = sessions[i]
 
                         break
@@ -222,201 +223,105 @@ class Perplex:
 
         if not active:
             logger.info("No active media sessions found for configured users")
-
             return
-
-        if type(active) is MovieSession:
-            return active
-        elif type(active) is EpisodeSession:
-            return active
-        elif type(active) is TrackSession:
-            return active
-
-        logger.error(f"Fetched active media session of unknown type: {type(active)}")
-
-    def BuildMoviePresence(self: Self, active: MovieSession) -> Dict[str, Any]:
-        """Build a Discord Rich Presence status for the active movie session."""
-
-        minimal: bool = self.config["discord"]["minimal"]
-
-        result: Dict[str, Any] = {}
-
-        metadata: Optional[Dict[str, Any]] = Perplex.FetchMetadata(
-            self, active.title, active.year, "movie"
-        )
-
-        if minimal:
-            result["primary"] = active.title
-        else:
-            result["primary"] = f"{active.title} ({active.year})"
-
-            details: List[str] = []
-
-            if len(active.genres) > 0:
-                details.append(active.genres[0].tag)
-
-            if len(active.directors) > 0:
-                details.append(f"Dir. {active.directors[0].tag}")
-
-            if len(details) > 1:
-                result["secondary"] = ", ".join(details)
-
-        if not metadata:
-            # Default to image uploaded via Discord Developer Portal
-            result["image"] = "movie"
-            result["buttons"] = []
-        else:
-            mId: int = metadata["id"]
-            mType: str = metadata["media_type"]
-            imgPath: str = metadata["poster_path"]
-
-            result["image"] = f"https://image.tmdb.org/t/p/original{imgPath}"
-
-            result["buttons"] = [
-                {"label": "TMDB", "url": f"https://themoviedb.org/{mType}/{mId}"}
-            ]
-
-        result["remaining"] = int((active.duration / 1000) - (active.viewOffset / 1000))
-        result["imageText"] = active.title
-
-        logger.trace(result)
-
-        return result
-
-    def BuildEpisodePresence(self: Self, active: EpisodeSession) -> Dict[str, Any]:
-        """Build a Discord Rich Presence status for the active episode session."""
-
-        result: Dict[str, Any] = {}
-
-        metadata: Optional[Dict[str, Any]] = Perplex.FetchMetadata(
-            self, active.show().title, active.show().year, "tv"
-        )
-
-        result["primary"] = active.show().title
-        result["secondary"] = active.title
-        result["remaining"] = int((active.duration / 1000) - (active.viewOffset / 1000))
-        result["imageText"] = active.show().title
-
-        if (active.seasonNumber) and (active.episodeNumber):
-            result["secondary"] += f" (S{active.seasonNumber}:E{active.episodeNumber})"
-
-        if not metadata:
-            # Default to image uploaded via Discord Developer Portal
-            result["image"] = "tv"
-            result["buttons"] = []
-        else:
-            mId: int = metadata["id"]
-            mType: str = metadata["media_type"]
-            imgPath: str = metadata["poster_path"]
-
-            result["image"] = f"https://image.tmdb.org/t/p/original{imgPath}"
-
-            result["buttons"] = [
-                {"label": "TMDB", "url": f"https://themoviedb.org/{mType}/{mId}"}
-            ]
-
-        logger.trace(result)
-
-        return result
+        
+        return active
 
     def BuildTrackPresence(self: Self, active: TrackSession) -> Dict[str, Any]:
         """Build a Discord Rich Presence status for the active music session."""
 
-        result: Dict[str, Any] = {}
+        result: Dict[str, Any] = {}   
+
+        baseUrl = active.thumbUrl.split('/')[2]
+        quoteUrl = urllib.parse.quote(active.parentThumb)
+        plexToken = "&" + active.thumbUrl.split('?')[-1]
+        url = "https://" + baseUrl + "/photo/:/transcode?width=128&height=128&minSize=1&upscale=1&url=" + quoteUrl + plexToken
+
+        parentThumb = active.parentThumb.replace('/', '\\')
+
+        global currentThumbPath
+        global currentThumbURL
+        global currentKey
+
+        thumbFile = os.path.dirname(os.path.realpath(__file__)) + "\\cache" + parentThumb + ".png"
+        linkFile = os.path.dirname(os.path.realpath(__file__)) + "\\cache" + parentThumb + ".txt"
+        os.makedirs(os.path.dirname(thumbFile), exist_ok=True)
+
+        if currentThumbPath != parentThumb:
+            if not os.path.isfile(thumbFile):
+                response = httpx.get(url)
+                open(thumbFile, 'wb').write(response.content)
+            
+            if not os.path.isfile(linkFile):
+                uploaded_image = pyimgur.Imgur(self.config["imgur"]["clientId"]).upload_image(thumbFile)
+                currentThumbURL = uploaded_image.link
+                open(linkFile, 'wt').write(currentThumbURL)
+            else:
+                currentThumbURL = open(linkFile, 'rt').read()
+            
+        
+        currentThumbPath = parentThumb
+        currentKey = active.key
 
         result["primary"] = active.titleSort
-        result["secondary"] = f"by {active.artist().title}"
-        result["remaining"] = int((active.duration / 1000) - (active.viewOffset / 1000))
+        result["secondary"] = f"by {active.originalTitle if active.originalTitle != None else active.artist().title}"
+        result["remaining"] = int(active.viewOffset / 1000)
         result["imageText"] = active.parentTitle
-
-        # Default to image uploaded via Discord Developer Portal
-        result["image"] = "music"
-        result["buttons"] = []
+        result["image"] = currentThumbURL
+        result["state"] = active.player.state
 
         logger.trace(result)
 
         return result
-
-    def FetchMetadata(
-        self: Self, title: str, year: int, format: str
-    ) -> Optional[Dict[str, Any]]:
-        """Fetch metadata for the provided title from TMDB."""
-
-        settings: Dict[str, Any] = self.config["tmdb"]
-        key: str = settings["apiKey"]
-
-        if not settings["enable"]:
-            logger.warning(f"TMDB disabled, some features will not be available")
-
-            return
-
-        try:
-            res: Response = httpx.get(
-                f"https://api.themoviedb.org/3/search/multi?api_key={key}&query={urllib.parse.quote(title)}"
-            )
-            res.raise_for_status()
-
-            logger.debug(f"(HTTP {res.status_code}) GET {res.url}")
-            logger.trace(res.text)
-        except Exception as e:
-            logger.error(f"Failed to fetch metadata for {title} ({year}), {e}")
-
-            return
-
-        data: Dict[str, Any] = res.json()
-
-        for entry in data.get("results", []):
-            if format == "movie":
-                if entry["media_type"] != format:
-                    continue
-                elif title.lower() != entry["title"].lower():
-                    continue
-                elif not entry["release_date"].startswith(str(year)):
-                    continue
-            elif format == "tv":
-                if entry["media_type"] != format:
-                    continue
-                elif title.lower() != entry["name"].lower():
-                    continue
-                elif not entry["first_air_date"].startswith(str(year)):
-                    continue
-
-            return entry
-
-        logger.warning(f"Could not locate metadata for {title} ({year})")
 
     def SetPresence(self: Self, client: Presence, data: Dict[str, Any]) -> bool:
         """Set the Rich Presence status for the provided Discord client."""
 
         title: str = data["primary"]
-
-        data["buttons"].append(
-            {"label": "Get Perplex", "url": "https://github.com/EthanC/Perplex"}
-        )
+        stateCaps = data["state"].capitalize()
 
         try:
-            client.update(
-                details=title,
-                state=data.get("secondary"),
-                end=int(datetime.now().timestamp() + data["remaining"]),
-                large_image=data["image"],
-                large_text=data["imageText"],
-                small_image="plex",
-                small_text="Plex",
-                buttons=data["buttons"],
-            )
+            if data["state"] == "playing":
+                client.update(
+                    details=title,
+                    state=data.get("secondary"),
+                    start=int(datetime.now().timestamp() - data["remaining"]),
+                    large_image=data["image"],
+                    large_text=data["imageText"],
+                    small_image="playing",
+                    small_text=stateCaps,
+                )
+
+            else:
+                client.update(
+                    details=title,
+                    state=data.get("secondary"),
+                    large_image=data["image"],
+                    large_text=data["imageText"],
+                    small_image="paused",
+                    small_text=stateCaps,
+                )
         except Exception as e:
             logger.error(f"Failed to set Discord Rich Presence to {title}, {e}")
 
             return False
 
-        logger.success(f"Set Discord Rich Presence to {title}")
+        
+        logger.success(f"Set Discord Rich Presence to: {title} ({stateCaps})")
 
         return True
 
 
 if __name__ == "__main__":
+    global currentThumbPath
+    currentThumbPath = ""
+
+    global currentThumbURL
+    currentThumbURL = ""
+
+    global server
+    server: Optional[PlexServer] = None
     try:
-        Perplex.Initialize(Perplex)
+        PerplexAmped.Initialize(PerplexAmped)
     except KeyboardInterrupt:
         exit()

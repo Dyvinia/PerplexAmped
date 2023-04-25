@@ -134,3 +134,6 @@ dmypy.json
 # Credentials
 config.json
 auth.txt
+
+# Thumbnail Cache
+cache/

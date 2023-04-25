@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "Perplex"
-version = "1.0.1"
-description = "Discord Rich Presence implementation for Plex."
-authors = ["Ethan C <16727756+EthanC@users.noreply.github.com>"]
+name = "PerplexAmped"
+version = "1.0.0"
+description = "Discord Rich Presence implementation for Plex music."
+authors = ["Ethan C <16727756+EthanC@users.noreply.github.com>", "Dyvinia <dulana57@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
