@@ -26,6 +26,9 @@ Note: A Discord desktop client must be connected on the same device that Perplex
 
 **Configurable Values:**
 
+-   `options`
+    - `thumbnailSize`: Size of downloaded image (ex. 128px)
+    - `refreshRate`: How often session state is checked
 -   `logging`
     - `severity`: Minimum [Loguru](https://loguru.readthedocs.io/en/stable/api/logger.html) severity level to display in the console (do not modify unless necessary).
 -   `plex`
