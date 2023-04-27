@@ -291,8 +291,6 @@ class PerplexAmped:
                     start=int(datetime.now().timestamp() - data["time"]),
                     large_image=data["image"],
                     large_text=data["album"],
-                    small_image="playing",
-                    small_text=stateCaps,
                 )
 
             else:
